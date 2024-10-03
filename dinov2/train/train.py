@@ -54,6 +54,7 @@ For python-based LazyConfig, use "path.key=value".
         type=str,
         help="Output directory to save logs and checkpoints",
     )
+    parser.add_argument("--local-rank", default=0, type=int, help="Variable for distributed computing.") 
 
     return parser
 
@@ -95,9 +96,7 @@ def build_schedulers(cfg):
     teacher_temp_schedule = CosineScheduler(**teacher_temp)
     last_layer_lr_schedule = CosineScheduler(**lr)
 
-    last_layer_lr_schedule.schedule[
-        : cfg.optim["freeze_last_layer_epochs"] * OFFICIAL_EPOCH_LENGTH
-    ] = 0  # mimicking the original schedules
+    last_layer_lr_schedule.schedule[: cfg.optim["freeze_last_layer_epochs"] * OFFICIAL_EPOCH_LENGTH] = 0  # mimicking the original schedules
 
     logger.info("Schedulers ready.")
 
@@ -270,6 +269,7 @@ def do_train(cfg, model, resume=False):
                 torch.distributed.all_reduce(v)
         loss_dict_reduced = {k: v.item() / distributed.get_global_size() for k, v in loss_dict.items()}
 
+        # nan이 있으면 안 된다. floating point 바꿔주면서 발생할 가능성이 있음
         if math.isnan(sum(loss_dict_reduced.values())):
             logger.info("NaN detected")
             raise AssertionError

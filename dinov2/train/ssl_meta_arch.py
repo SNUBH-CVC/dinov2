@@ -45,7 +45,8 @@ class SSLMetaArch(nn.Module):
         if cfg.student.pretrained_weights:
             chkpt = torch.load(cfg.student.pretrained_weights)
             logger.info(f"OPTIONS -- pretrained weights: loading from {cfg.student.pretrained_weights}")
-            student_backbone.load_state_dict(chkpt["model"], strict=False)
+            student_backbone.load_state_dict(chkpt, strict=False)
+            teacher_backbone.load_state_dict(chkpt, strict=False)
 
         self.embed_dim = embed_dim
         self.dino_out_dim = cfg.dino.head_n_prototypes
@@ -131,7 +132,7 @@ class SSLMetaArch(nn.Module):
 
     def forward_backward(self, images, teacher_temp):
         n_global_crops = 2
-        assert n_global_crops == 2
+        assert n_global_crops == 2  # 한 번에 2개 augmentation 데이터만 학습시킨다.
         n_local_crops = self.cfg.crops.local_crops_number
 
         global_crops = images["collated_global_crops"].cuda(non_blocking=True)
@@ -141,11 +142,12 @@ class SSLMetaArch(nn.Module):
         mask_indices_list = images["mask_indices_list"].cuda(non_blocking=True)
         n_masked_patches_tensor = images["n_masked_patches"].cuda(non_blocking=True)
         n_masked_patches = mask_indices_list.shape[0]
-        upperbound = images["upperbound"]
+        upperbound = images["upperbound"]  # 이건 뭐지
         masks_weight = images["masks_weight"].cuda(non_blocking=True)
 
-        n_local_crops_loss_terms = max(n_local_crops * n_global_crops, 1)
-        n_global_crops_loss_terms = (n_global_crops - 1) * n_global_crops
+        # local crop은 iBOT에서 제시된 개념으로 patch와는 다른 내용이다.
+        n_local_crops_loss_terms = max(n_local_crops * n_global_crops, 1)  # N x M 으로 cls loss 계산 
+        n_global_crops_loss_terms = (n_global_crops - 1) * n_global_crops  # 자기 자신을 제외하고 cls loss 계산
 
         do_dino = self.do_dino
         do_ibot = self.do_ibot
@@ -161,7 +163,8 @@ class SSLMetaArch(nn.Module):
             teacher_cls_tokens = teacher_backbone_output_dict["x_norm_clstoken"]
             teacher_cls_tokens = teacher_cls_tokens.chunk(n_global_crops_teacher)
             # watch out: these are chunked and cat'd in reverse so A is matched to B in the global crops dino loss
-            teacher_cls_tokens = torch.cat((teacher_cls_tokens[1], teacher_cls_tokens[0]))
+            teacher_cls_tokens = torch.cat((teacher_cls_tokens[1], teacher_cls_tokens[0]))  # 2개가 나오게 되나?
+            # local patch tokens
             ibot_teacher_patch_tokens = teacher_backbone_output_dict["x_norm_patchtokens"]
             _dim = ibot_teacher_patch_tokens.shape[-1]
             n_cls_tokens = teacher_cls_tokens.shape[0]
@@ -181,6 +184,7 @@ class SSLMetaArch(nn.Module):
                     n_cls_tokens : n_cls_tokens + n_masked_patches
                 ]
             elif do_ibot and self.ibot_separate_head:
+                # teacher head 통과시켜서 cls_token, masked_patch_token 값을 얻는다.
                 buffer_tensor_teacher = ibot_teacher_patch_tokens.new_zeros(upperbound, _dim)
                 torch.index_select(
                     ibot_teacher_patch_tokens.flatten(0, 1),
@@ -226,14 +230,16 @@ class SSLMetaArch(nn.Module):
 
             return teacher_dino_softmaxed_centered_list, masked_teacher_ibot_softmaxed_centered
 
+        # teacher는 global crop, patch에 대해서만 계산한다. local crop은 student에서만 계산!
         teacher_dino_softmaxed_centered_list, masked_teacher_ibot_softmaxed_centered = get_teacher_output()
         reshard_fsdp_model(self.teacher)
 
         loss_dict = {}
 
         loss_accumulator = 0  # for backprop
+        # local crop 계산, mask는 local crop에 대해서는 주어지지 않네? iBOT Figure 7. (b)와 같은 모습으로 학습
         student_global_backbone_output_dict, student_local_backbone_output_dict = self.student.backbone(
-            [global_crops, local_crops], masks=[masks, None], is_training=True
+            [global_crops, local_crops], masks=[masks, None], is_training=True  
         )
 
         inputs_for_student_head_list = []
@@ -275,6 +281,7 @@ class SSLMetaArch(nn.Module):
         if do_ibot and not self.ibot_separate_head:
             student_global_masked_patch_tokens_after_head = outputs_list.pop(0).squeeze(0)[:n_masked_patches]
 
+        # local crop loss 계산, cls loss
         if n_local_crops > 0:
             dino_local_crops_loss = self.dino_loss(
                 student_output_list=student_local_cls_tokens_after_head.chunk(n_local_crops),
@@ -290,6 +297,7 @@ class SSLMetaArch(nn.Module):
         # process global crops
         loss_scales = 2  # this is here since we process global crops together
 
+        # global crop loss 계산, cls loss
         if do_dino:
             # compute loss
             dino_global_crops_loss = (
@@ -319,6 +327,7 @@ class SSLMetaArch(nn.Module):
                     koleo_loss / loss_scales
                 )  # this is to display the same losses as before but we can remove eventually
 
+        # patch에 대한 cls loss 계산
         if do_ibot:
             # compute loss
             ibot_patch_loss = (

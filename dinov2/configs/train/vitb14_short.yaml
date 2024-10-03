@@ -1,0 +1,9 @@
+# this corresponds to the default config
+train:
+  dataset_path: ImageNet:split=TRAIN
+  batch_size_per_gpu: 4
+student:
+  arch: vit_base
+  patch_size: 14
+  block_chunks: 4
+  pretrained_weights: './pretrain/dinov2_vitb14_pretrain.pth'

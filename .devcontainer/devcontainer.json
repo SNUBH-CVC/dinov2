@@ -1,0 +1,19 @@
+{
+    "build": { "dockerfile": "../Dockerfile" },
+    "runArgs": ["--gpus", "all", "--shm-size=16G"],
+    "remoteUser": "whikwon",
+    "mounts": [
+      "source=/data,target=/data,type=bind,consistency=cached",
+      "source=/mnt,target=/mnt,type=bind,consistency=cached",
+      "type=bind,source=/home/${localEnv:USER}/.ssh,target=/home/whikwon/.ssh,readonly"
+    ],
+    "customizations": {
+      // Configure properties specific to VS Code.
+      "vscode": {
+        // Add the IDs of extensions you want installed when the container is created.
+        "extensions": ["ms-python.python", "ms-python.vscode-pylance", "ms-toolsai.jupyter"]
+      }
+    },
+    "postCreateCommand": "sudo chown -R whikwon:whikwon /opt/conda && python setup.py develop"
+  }
+  
