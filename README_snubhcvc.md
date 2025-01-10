@@ -1,5 +1,17 @@
-## Installation
+## Train
+Run DINOv2 training on 4 A100-80GB nodes (32 GPUs) in a SLURM cluster environment with submitit:
+- train with 1 machine and multiple GPUs: https://github.com/facebookresearch/dinov2/issues/134
+- initialize weight using pretrained DINOv2 model and pretraining: https://github.com/facebookresearch/dinov2/issues/339
 
+```shell
+python dinov2/run/train/train.py --nodes 1 --ngpus 2 --config-file dinov2/configs/train/vitl16_short.yaml --output-dir ./outputs train.dataset_path=ImageNet:split=TRAIN:root=/mnt/nas/external/public/raw/imagenet-1k:extra=/mnt/nas/external/public/raw/imagenet-1k
+# 1-machine, multi-GPU 학습 시 아래 명령어로 실행시켜야 한다. https://github.com/facebookresearch/dinov2/issues/161#issuecomment-1689542308
+CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --nproc_per_node=2 dinov2/train/train.py --config-file=dinov2/configs/train/vitl16_short.yaml --output-dir=./outputs train.dataset_path=ImageNet:split=TRAIN:root=/mnt/nas/external/public/raw/imagenet-1k:extra=/mnt/nas/external/public/raw/imagenet-1k
+
+CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --nproc_per_node=2 dinov2/train/train.py --config-file=dinov2/configs/train/vitb14_short.yaml --output-dir=./outputs train.dataset_path=CAG:split=TRAIN:root=./data:extra=./data
+```
+
+## Dataset
 ### ImageNet
 https://github.com/facebookresearch/dinov2/issues/460 에서 labels.txt 다운로드 후 아래 코드 실행하면 필요한 extra 파일이 생성된다.
 
@@ -26,6 +38,15 @@ CAG 데이터 학습 시 `train.dataset_path=CAG:split=TRAIN`으로 변경해주
 DINOv2 pretrained weight로 initialize 한 뒤에 pretrain 하고 싶은 경우, student, teacher를 학습된 checkpoint로 initialize 해주면 된다.
 `ssl_meta_arch.py` 파일 내에서 `teacher_backbone`도 initialize 해주면 될 듯하다.
 https://github.com/facebookresearch/dinov2/issues/339
+
+pretrained weight 크기 기준이 518 이므로 이에 맞춰서 설정하고 돌려야 한다. https://github.com/facebookresearch/dinov2/issues/316
+V100 32GB 기준 batch size 16이 최대로 빅데이터서버 기준 128이 최대
+
+## Downstream Task
+
+### Angle prediction
+angle 별 100개 정도 모아서 평가 데이터셋으로 구축 후 테스트 진행 
+- scratch 학습, DINOv2 pretrained 학습 성능 비교하기
 
 ## TODO
 - [ ] 1 machine 학습 시 `fsdp.FSDPCheckpointer`를 변경해줘야 하는지 확인 필요, https://github.com/facebookresearch/dinov2/issues/134
