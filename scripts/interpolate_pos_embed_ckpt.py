@@ -1,7 +1,17 @@
+import argparse
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as nnf
-import math
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Interpolate position embeddings")
+    parser.add_argument("--ckpt_path", type=str, default="./pretrain/dinov2_vitb14_pretrain.pth")
+    parser.add_argument("--output_path", type=str, default="./pretrain/dinov2_vitb14_pretrain_embedding_interpolated.pth")
+    parser.add_argument("--out_dim", type=int, default=256)
+    return parser.parse_args()
 
 
 def interpolate_pos_encoding(x, w, h):
@@ -23,11 +33,20 @@ def interpolate_pos_encoding(x, w, h):
     return torch.cat((x[:, :1], patch_pos_embed), dim=1)
 
 
-model_path = "./pretrain/dinov2_vitb14_pretrain.pth"
-model = torch.load(model_path, map_location="cpu")
-input_tensor = model["pos_embed"]
-pos_embed_interp = interpolate_pos_encoding(input_tensor, 16, 16)
-pos_embed = nn.Parameter(torch.zeros(1, 256))
-pos_embed.data = pos_embed_interp
-model["pos_embed"] = pos_embed
-torch.save(model, "./pretrain/dinov2_vitb14_pretrain_embedding_interpolated.pth")
+def main():
+    args = parse_args()
+    model_weights = torch.load(args.ckpt_path)
+    pos_embed = model_weights["pos_embed"]
+    print("Original position embedding shape:", pos_embed.shape)
+
+    width = height = args.out_dim // 14
+    interpolated_pos_embed = interpolate_pos_encoding(pos_embed, width, height)
+    pos_embed_param = nn.Parameter()
+    pos_embed_param.data = interpolated_pos_embed
+    model_weights["pos_embed"] = pos_embed_param
+    print("Interpolated position embedding shape:", pos_embed_param.shape)
+    torch.save(model_weights, args.output_path)
+
+
+if __name__ == "__main__":
+    main()

@@ -8,8 +8,12 @@ python dinov2/run/train/train.py --nodes 1 --ngpus 2 --config-file dinov2/config
 # 1-machine, multi-GPU 학습 시 아래 명령어로 실행시켜야 한다. https://github.com/facebookresearch/dinov2/issues/161#issuecomment-1689542308
 CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --nproc_per_node=2 dinov2/train/train.py --config-file=dinov2/configs/train/vitl16_short.yaml --output-dir=./outputs train.dataset_path=ImageNet:split=TRAIN:root=/mnt/nas/external/public/raw/imagenet-1k:extra=/mnt/nas/external/public/raw/imagenet-1k
 
-CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --nproc_per_node=2 dinov2/train/train.py --config-file=dinov2/configs/train/vitb14_short.yaml --output-dir=./outputs train.dataset_path=CAG:split=TRAIN:root=./data:extra=./data
+CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --nproc_per_node=2 dinov2/train/train.py --config-file=dinov2/configs/train/vitb14_short.yaml --output-dir=./outputs train.dataset_path=CAG:split=TRAIN:root=./data/cagfm
 ```
+
+### Continual Pre-training
+https://github.com/facebookresearch/dinov2/issues/431
+https://github.com/cpheidelberg/tools_dinov2
 
 ## Dataset
 ### ImageNet
@@ -44,9 +48,17 @@ V100 32GB 기준 batch size 16이 최대로 빅데이터서버 기준 128이 최
 
 ## Downstream Task
 
+### Checkpoint 
+- 사용하지 않는 parameter 제거, checkpoint parameter 이름, pos_embed 차원 interpolation 문제를 해결해야 load 할 수 있다.
+
 ### Angle prediction
 angle 별 100개 정도 모아서 평가 데이터셋으로 구축 후 테스트 진행 
 - scratch 학습, DINOv2 pretrained 학습 성능 비교하기
 
-## TODO
-- [ ] 1 machine 학습 시 `fsdp.FSDPCheckpointer`를 변경해줘야 하는지 확인 필요, https://github.com/facebookresearch/dinov2/issues/134
+## TroubleShooting
+- `mask_token` downstream task에서 사용하지 않아서 `find_unused_parameters` 에러가 생길 수 있다. `requires_grad` 를 False로 설정해주면 해결된다.
+    - https://github.com/facebookresearch/dinov2/issues/210
+    - mmpretrain에서 알 수 없는 버그로 성능이 loss가 이상하게 나와서 별도의 학습 스크립트 구현.
+- ViT-S에서 `drop_path_rate > 0`인 경우 에러 발생 
+    - https://github.com/facebookresearch/dinov2/issues/160
+    - 해결에 대한 PR이 있긴 한데, 일단 `drop_path_rate: 0`으로 설정한 뒤에 학습 

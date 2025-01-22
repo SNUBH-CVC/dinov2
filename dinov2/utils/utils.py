@@ -13,8 +13,23 @@ import numpy as np
 import torch
 from torch import nn
 
-
 logger = logging.getLogger("dinov2")
+
+
+def load_pretrained_model_wo_blocks(model, state_dict):
+    model_state_dict = model.state_dict()
+    new_state_dict = {}
+    for model_key in model_state_dict.keys():
+        if "blocks" in model_key:
+            block_idx = int(model_key.split('.')[1])
+            for ckpt_key, ckpt_value in state_dict.items():
+                if model_key == ckpt_key.replace("blocks", f"blocks.{block_idx}"):
+                    new_state_dict[model_key] = ckpt_value
+                    break
+        else:
+            new_state_dict[model_key] = model_state_dict[model_key]
+    result = model.load_state_dict(new_state_dict, strict=True)
+    logger.info("Load pretrained model without blocks: {}".format(result))
 
 
 def load_pretrained_weights(model, pretrained_weights, checkpoint_key):

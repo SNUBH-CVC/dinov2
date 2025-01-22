@@ -12,7 +12,7 @@ from torch import nn
 from dinov2.loss import DINOLoss, iBOTPatchLoss, KoLeoLoss
 from dinov2.models import build_model_from_cfg
 from dinov2.layers import DINOHead
-from dinov2.utils.utils import has_batchnorms
+from dinov2.utils.utils import has_batchnorms, load_pretrained_model_wo_blocks
 from dinov2.utils.param_groups import get_params_groups_with_decay, fuse_params_groups
 from dinov2.fsdp import get_fsdp_wrapper, ShardedGradScaler, get_fsdp_modules, reshard_fsdp_model
 
@@ -38,11 +38,11 @@ class SSLMetaArch(nn.Module):
         teacher_model_dict = dict()
 
         student_backbone, teacher_backbone, embed_dim = build_model_from_cfg(cfg)
-        if cfg.student.pretrained_weights:
-            chkpt = torch.load(cfg.student.pretrained_weights)
+        if cfg.student.pretrained_weights is not None:
+            state_dict = torch.load(cfg.student.pretrained_weights)
             logger.info(f"OPTIONS -- pretrained weights: loading from {cfg.student.pretrained_weights}")
-            student_backbone.load_state_dict(chkpt, strict=False)
-            teacher_backbone.load_state_dict(chkpt, strict=False)
+            load_pretrained_model_wo_blocks(student_backbone, state_dict)
+            load_pretrained_model_wo_blocks(teacher_backbone, state_dict)
 
         student_model_dict["backbone"] = student_backbone
         teacher_model_dict["backbone"] = teacher_backbone
